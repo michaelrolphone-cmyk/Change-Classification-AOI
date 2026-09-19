@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SMT Pi Inspector — Sony IMX219 V2</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#111;color:#eee;font-family:Arial,sans-serif}
+header{padding:12px 14px;background:#1a1a1a;border-bottom:1px solid #333}
+h1{margin:0;font-size:18px} header p{margin:4px 0 0;color:#888;font-size:12px}
+.wrap{display:grid;gap:12px;padding:12px}
+@media(min-width:900px){.wrap{grid-template-columns:1.2fr .8fr}}
+.card{background:#191919;border:1px solid #333;border-radius:8px;overflow:hidden}
+.card h2{margin:0;padding:8px 10px;background:#222;font-size:13px;border-bottom:1px solid #333}
+img.view{display:block;width:100%;background:#000;min-height:180px;object-fit:contain}
+.btns{display:grid;gap:8px;padding:10px}
+button{min-height:44px;border:1px solid #555;border-radius:7px;background:#333;color:#fff;font-weight:bold}
+#cap{background:#286b3c} #ins{background:#245a86} #fine{background:#4a3a1a}
+.row{display:grid;grid-template-columns:120px 1fr 64px;gap:8px;align-items:center;padding:6px 10px}
+.row label{font-size:12px;color:#bbb}
+.row input,.row select{width:100%;background:#292929;color:#fff;border:1px solid #444;border-radius:4px;padding:4px}
+.val{font:12px monospace;color:#9cf;text-align:right}
+.status{padding:10px 12px;font-size:13px;color:#aaa}
+.ok{color:#72d98b}.err{color:#ff7777}
+.meta{font:12px monospace;color:#8ab;padding:0 10px 10px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header>
+<h1>SMT Pi Inspector</h1>
+<p>Sony IMX219 Camera Module V2 · 3280×2464 still · {{ camera }} · GPIO 17 inspect / 27 ref / 22 LED · SKU <span id="skuLabel">{{ settings.sku }}</span></p>
+</header>
+<div class="wrap">
+  <div>
+    <div class="card">
+      <h2>Live preview</h2>
+      <img class="view" src="/stream" alt="preview">
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>Last inspect</h2>
+      <img class="view" id="resultImg" src="/image/result" alt="result" onerror="this.style.opacity=.3">
+    </div>
+  </div>
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="btns">
+      <input id="sku" value="{{ settings.sku }}" placeholder="SKU name">
+      <button id="cap">① Capture reference</button>
+      <button id="ins">② Inspect still</button>
+      <button id="fine">SMT Fine preset</button>
+    </div>
+    <div class="row"><label>Display</label>
+      <select id="display">
+        <option value="overlay">Overlay</option>
+        <option value="mask">Mask</option>
+        <option value="heat">Heat</option>
+        <option value="live">Live still</option>
+      </select><span></span>
+    </div>
+    <div class="row"><label>Compare</label>
+      <select id="method">
+        <option value="y">Brightness Y</option>
+        <option value="ycc" selected>Y + color</option>
+        <option value="edge">Edge</option>
+        <option value="combined">Y + color + edge</option>
+      </select><span></span>
+    </div>
+    <div class="row"><label>Brightness ΔY</label><input id="y_thresh" type="range" min="0.5" max="40" step="0.5"><span class="val" id="y_thresh_v"></span></div>
+    <div class="row"><label>Color ΔC</label><input id="c_thresh" type="range" min="0.5" max="40" step="0.5"><span class="val" id="c_thresh_v"></span></div>
+    <div class="row"><label>Edge Δ</label><input id="e_thresh" type="range" min="0.005" max="0.3" step="0.005"><span class="val" id="e_thresh_v"></span></div>
+    <div class="row"><label>Change gain</label><input id="gain" type="range" min="0.5" max="8" step="0.1"><span class="val" id="gain_v"></span></div>
+    <div class="row"><label>Highlight floor</label><input id="floor" type="range" min="0" max="20" step="0.25"><span class="val" id="floor_v"></span></div>
+    <div class="row"><label>Local contrast</label><input id="highpass" type="range" min="0" max="1" step="0.05"><span class="val" id="highpass_v"></span></div>
+    <div class="row"><label>Opacity</label><input id="opacity" type="range" min="0.15" max="1" step="0.05"><span class="val" id="opacity_v"></span></div>
+    <div class="row"><label>X/Y nudge align</label><input id="align" type="checkbox"><span></span></div>
+    <div class="row"><label>Auto board box</label><input id="auto_roi" type="checkbox"><span></span></div>
+    <div class="status" id="status">Ready.</div>
+    <div class="meta" id="meta"></div>
+    <div class="card" style="margin:10px;border:0">
+      <h2 style="background:transparent;border:0;padding:0 0 6px">Reference</h2>
+      <img class="view" id="refImg" src="/image/reference" alt="ref" onerror="this.style.opacity=.3">
+    </div>
+  </div>
+</div>
+<script>
+const S = {{ settings | tojson }};
+const keys = ["y_thresh","c_thresh","e_thresh","gain","floor","highpass","opacity"];
+function setStatus(t, ok){ const el=document.getElementById("status"); el.textContent=t; el.className="status "+(ok===false?"err":ok?"ok":""); }
+function paint(){
+  document.getElementById("display").value = S.display;
+  document.getElementById("method").value = S.method;
+  document.getElementById("align").checked = !!S.align;
+  document.getElementById("auto_roi").checked = S.auto_roi !== false;
+  document.getElementById("sku").value = S.sku;
+  document.getElementById("skuLabel").textContent = S.sku;
+  keys.forEach(k=>{
+    const el=document.getElementById(k);
+    el.value = S[k];
+    const v=document.getElementById(k+"_v");
+    if(v) v.textContent = Number(S[k]).toFixed(k==="e_thresh"?3:2);
+  });
+}
+async function pushSettings(){
+  S.display = document.getElementById("display").value;
+  S.method = document.getElementById("method").value;
+  S.align = document.getElementById("align").checked;
+  S.auto_roi = document.getElementById("auto_roi").checked;
+  S.sku = document.getElementById("sku").value.trim() || "default";
+  keys.forEach(k=> S[k] = Number(document.getElementById(k).value));
+  await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S)});
+  paint();
+}
+paint();
+document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change", pushSettings));
+document.querySelectorAll("input[type=range]").forEach(el=>el.addEventListener("input", ()=>{
+  const v=document.getElementById(el.id+"_v");
+  if(v) v.textContent = Number(el.value).toFixed(el.id==="e_thresh"?3:2);
+}));
+document.getElementById("cap").onclick = async ()=>{
+  await pushSettings();
+  setStatus("Capturing reference…");
+  const r = await fetch("/api/capture_ref",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sku:S.sku})}).then(x=>x.json());
+  if(r.ok){ setStatus("Reference saved "+r.shape, true); document.getElementById("refImg").src="/image/reference?t="+Date.now(); }
+  else setStatus(r.error||"fail", false);
+};
+document.getElementById("ins").onclick = async ()=>{
+  await pushSettings();
+  setStatus("Inspecting…");
+  const r = await fetch("/api/inspect",{method:"POST"}).then(x=>x.json());
+  if(r.ok){
+    setStatus("Changed "+r.changed_pct+"%  ("+r.changed_px+" px)", true);
+    document.getElementById("meta").textContent = JSON.stringify(r,null,2);
+    document.getElementById("resultImg").src="/image/result?t="+Date.now();
+    document.getElementById("resultImg").style.opacity=1;
+  } else setStatus(r.error||"fail", false);
+};
+document.getElementById("fine").onclick = async ()=>{
+  const r = await fetch("/api/preset/fine",{method:"POST"}).then(x=>x.json());
+  Object.assign(S,r); paint(); setStatus("SMT Fine preset applied", true);
+};
+</script>
+</body>
+</html>
