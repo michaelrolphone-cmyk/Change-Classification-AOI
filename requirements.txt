@@ -1,0 +1,8 @@
+flask>=3.0
+numpy>=1.24
+pillow>=10.0
+# On Raspberry Pi OS Bookworm with camera enabled:
+#   sudo apt install -y python3-picamera2 python3-flask python3-numpy python3-pil
+# Prefer apt packages on Pi 3 to avoid pip compiling.
+# Optional fallback webcam:
+#   opencv-python-headless

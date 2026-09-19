@@ -1,0 +1,20 @@
+[Unit]
+Description=SMT Pi Inspector web UI
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/smt_pi
+Environment=SMT_HOST=0.0.0.0
+Environment=SMT_PORT=8080
+# Environment=SMT_TOKEN=change-me
+Environment=SMT_GPIO_INSPECT=17
+Environment=SMT_GPIO_REF=27
+Environment=SMT_GPIO_LED=22
+ExecStart=/usr/bin/python3 /home/pi/smt_pi/app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
