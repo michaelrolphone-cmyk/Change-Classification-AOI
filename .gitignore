@@ -1,0 +1,7 @@
+data/references/
+data/results/
+data/settings.json
+__pycache__/
+*.pyc
+.venv/
+venv/
